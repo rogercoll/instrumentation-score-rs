@@ -1,0 +1,9 @@
+[package]
+name = "instrumentation-score-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+elasticsearch = "9.0.0-alpha.1"
+futures = "0.3.31"
+serde_json = "1.0.141"
