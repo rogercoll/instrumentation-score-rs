@@ -16,15 +16,17 @@ macro_rules! calculate_score {
             B: $( $name + )* Sized
         {
             let mut impacts = [(0,0); 4];
-            $(
-                let impact_pos = match <B as $name>::IMPACT {
+            let impact_pos_fn = | impact: crate::impact::Impact | -> usize {
+                match impact {
                         crate::impact::Impact::Critical => 0,
                         crate::impact::Impact::Important => 1,
                         crate::impact::Impact::Normal => 2,
                         crate::impact::Impact::Low => 3,
-                };
-                impacts[impact_pos].0 += <B as $name>::is_compliant(backend)? as u8;
-                impacts[impact_pos].1 += 1;
+                }
+            };
+            $(
+                impacts[impact_pos_fn(<B as $name>::IMPACT)].0 += <B as $name>::is_compliant(backend)? as u8;
+                impacts[impact_pos_fn(<B as $name>::IMPACT)].1 += 1;
             )*
 
 
