@@ -2,8 +2,8 @@ use elasticsearch::{Elasticsearch, Error, http::transport::Transport};
 use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
-const OTEL_LOGS_INDEX: &'static str = "logs-*-otel-*";
-const OTEL_METRICS_INDEX: &'static str = "metrics-*-otel-*";
+const OTEL_LOGS_INDEX: &'static str = "logs-*otel-*";
+const OTEL_METRICS_INDEX: &'static str = "metrics-*otel-*";
 
 #[derive(Debug)]
 pub struct ElasticsearchBackend {
@@ -28,8 +28,9 @@ impl ElasticsearchBackend {
 }
 
 // implement rules for the Elasticsearch client
+// JSON Pointer: https://datatracker.ietf.org/doc/html/rfc6901
 macro_rules! elasticsearch_rule {
-    ($rule:ident, $query:expr, $index:expr) => {
+    ($rule:ident, $query:expr, $index:expr, ($json_pointer:expr, $threshold:expr)) => {
         impl crate::$rule for ElasticsearchBackend {
             fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
                 let response = self.tokio_runtime.block_on(
@@ -42,12 +43,16 @@ macro_rules! elasticsearch_rule {
                     .tokio_runtime
                     .block_on(response.json::<serde_json::Value>())?;
                 println!("Response: {:?}", response_body);
-                Ok(response_body["hits"]["total"]["value"]
+                Ok(response_body
+                    .pointer($json_pointer)
+                    .ok_or::<Box<dyn std::error::Error>>(
+                        "could not get JSON Pointer from response".into(),
+                    )?
                     .as_i64()
                     .ok_or::<Box<dyn std::error::Error>>(
                         "could not read total hits from response".into(),
                     )?
-                    == 0)
+                    < $threshold)
             }
         }
     };
@@ -82,7 +87,8 @@ elasticsearch_rule!(
             }
         }
     }),
-    OTEL_LOGS_INDEX
+    OTEL_LOGS_INDEX,
+    ("/hits/total/value", 1)
 );
 
 elasticsearch_rule!(
@@ -103,42 +109,59 @@ elasticsearch_rule!(
             }
         }
     }),
-    OTEL_LOGS_INDEX
+    OTEL_LOGS_INDEX,
+    ("/hits/total/value", 1)
 );
 
 elasticsearch_rule!(
     MET001,
     json!({
-        "size": 0,
-        "query": {
-            "range": {
-                "@timestamp": {
-                    "gte": "now-1h"
-                }
-            }
-        },
-        "aggs": {
-            "by_attribute_key": {
-                "nested": {
-                    "path": "attributes"
-                },
-                "aggs": {
-                    "keys": {
-                        "terms": {
-                            "field": "attributes.key",
-                            "size": 100
-                        },
-                        "aggs": {
-                            "cardinality_values": {
-                                "cardinality": {
-                                    "field": "attributes.value.keyword"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+      "size": 0,
+      "query": {
+          "range": {
+              "@timestamp": {
+                  "gte": "now-1h"
+              }
+          }
+      },
+      "aggs": {
+          "unique_attribute_keys": {
+              "cardinality": {
+                  "script": {
+                      "lang": "painless",
+                      "source": "if (params._source.attributes != null) { return params._source.attributes.keySet(); } return [];"
+                  }
+              }
+          }
+      }
     }),
-    OTEL_METRICS_INDEX
+    OTEL_METRICS_INDEX,
+    ("/aggregations/unique_attribute_keys/value", 10001)
+);
+
+elasticsearch_rule!(
+    MET002,
+    json!({
+      "size": 0,
+      "query": {
+        "bool": {
+          "must": {
+            "range": {
+              "@timestamp": {
+                "gte": "now-1h"
+              }
+            }
+          },
+          "should": [
+            { "term": { "unit": "1" }},
+            { "term": { "unit": "none" }},
+            { "term": { "unit": "" }},
+            { "bool": { "must_not": { "exists": { "field": "unit" }}}}
+          ],
+          "minimum_should_match": 1
+        }
+      }
+    }),
+    OTEL_METRICS_INDEX,
+    ("/hits/total/value", 1)
 );

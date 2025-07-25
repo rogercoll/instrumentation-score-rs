@@ -40,7 +40,10 @@ calculate_score!(
     (LOG001, Important),
     // https://github.com/instrumentation-score/spec/blob/main/rules/LOG-002.md
     (LOG002, Important),
-    (MET001, Important)
+    // https://github.com/instrumentation-score/spec/blob/main/rules/MET-001.md
+    (MET001, Important),
+    // https://github.com/instrumentation-score/spec/blob/main/rules/MET-002.md
+    (MET002, Important)
 );
 
 #[cfg(test)]
@@ -63,6 +66,12 @@ mod tests {
     }
 
     impl MET001 for BackendMock {
+        fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
+            Ok(true)
+        }
+    }
+
+    impl MET002 for BackendMock {
         fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
             Ok(true)
         }
