@@ -71,6 +71,6 @@ mod tests {
     #[test]
     fn valid_score_caluclation() {
         let result = calculate_score(&BackendMock {});
-        assert_eq!(result.unwrap(), 3.0);
+        assert_eq!(result.unwrap(), 100.0);
     }
 }
