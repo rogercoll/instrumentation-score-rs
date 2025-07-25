@@ -23,7 +23,7 @@ macro_rules! calculate_score {
                         crate::impact::Impact::Normal => 2,
                         crate::impact::Impact::Low => 3,
                 };
-                impacts[impact_pos].0 += <B as $name>::execute(backend)? as u8;
+                impacts[impact_pos].0 += <B as $name>::is_compliant(backend)? as u8;
                 impacts[impact_pos].1 += 1;
             )*
 
@@ -49,19 +49,19 @@ mod tests {
     struct BackendMock;
 
     impl LOG001 for BackendMock {
-        fn execute(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
             Ok(true)
         }
     }
 
     impl LOG002 for BackendMock {
-        fn execute(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
             Ok(true)
         }
     }
 
     impl MET001 for BackendMock {
-        fn execute(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
             Ok(true)
         }
     }

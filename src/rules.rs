@@ -8,7 +8,7 @@ macro_rules! define_rule {
                 stringify!($name)
             }
 
-            fn execute(&self) -> Result<bool, Box<dyn std::error::Error>>; // to be implemented by Backend
+            fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>>; // to be implemented by Backend
         }
     };
 }

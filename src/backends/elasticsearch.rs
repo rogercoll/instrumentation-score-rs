@@ -1,6 +1,5 @@
 use elasticsearch::{http::transport::Transport, Elasticsearch, Error};
-use futures::executor::block_on;
-use serde_json::{json, Value};
+use serde_json::json;
 
 const OTEL_LOGS_INDEX: &'static str = "jklk";
 const OTEL_METRICS_INDEX: &'static str = "jklk";
@@ -11,10 +10,10 @@ pub struct ElasticsearchBackend {
 }
 
 impl ElasticsearchBackend {
-    pub fn new() -> Result<Self, Error> {
-        let transport = Transport::single_node("http://example.com")?;
+    pub fn new(es_endpoint: &str, es_api_key: &str) -> Result<Self, Error> {
+        let transport = Transport::single_node(es_endpoint)?;
         transport.set_auth(elasticsearch::auth::Credentials::EncodedApiKey(
-            "hello".to_string(),
+            es_api_key.to_string(),
         ));
         Ok(Self {
             client: Elasticsearch::new(transport),
@@ -26,8 +25,8 @@ impl ElasticsearchBackend {
 macro_rules! elasticsearch_rule {
     ($rule:ident, $query:expr, $index:expr) => {
         impl crate::$rule for ElasticsearchBackend {
-            fn execute(&self) -> Result<bool, Box<dyn std::error::Error>> {
-                let response = ::futures::executor::block_on(
+            fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
+                let response = futures::executor::block_on(
                     self.client
                         .search(elasticsearch::SearchParts::Index(&[$index]))
                         .body($query)
