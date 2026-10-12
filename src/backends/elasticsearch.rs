@@ -1,24 +1,21 @@
-use elasticsearch::{Elasticsearch, Error, http::transport::Transport};
+use elasticsearch::{esql::{Esql, EsqlAsyncQueryGetParts}, http::transport::Transport, Elasticsearch, Error};
 use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
 const OTEL_LOGS_INDEX: &'static str = "logs-*otel-*";
 const OTEL_METRICS_INDEX: &'static str = "metrics-*otel-*";
 
-#[derive(Debug)]
-pub struct ElasticsearchBackend {
+pub struct ElasticsearchBackend<'a> {
     client: Elasticsearch,
+    esql_client: Esql<'a>,
     tokio_runtime: Runtime,
 }
 
-impl ElasticsearchBackend {
-    pub fn new(es_endpoint: &str, es_api_key: &str) -> Result<Self, Error> {
-        let transport = Transport::single_node(es_endpoint)?;
-        transport.set_auth(elasticsearch::auth::Credentials::EncodedApiKey(
-            es_api_key.to_string(),
-        ));
+impl<'a> ElasticsearchBackend<'a> {
+    pub fn new(es_transport: &'a Transport) -> Result<Self, Error> {
         Ok(Self {
-            client: Elasticsearch::new(transport),
+            client: Elasticsearch::new(es_transport.clone()),
+            esql_client: Esql::new(es_transport),
             tokio_runtime: Builder::new_multi_thread()
                 .worker_threads(1)
                 .enable_all()
@@ -27,11 +24,11 @@ impl ElasticsearchBackend {
     }
 }
 
-// implement rules for the Elasticsearch client
+// implement rules for the Elasticsearch search client
 // JSON Pointer: https://datatracker.ietf.org/doc/html/rfc6901
-macro_rules! elasticsearch_rule {
+macro_rules! search_rule {
     ($rule:ident, $query:expr, $index:expr, ($json_pointer:expr, $threshold:expr)) => {
-        impl crate::$rule for ElasticsearchBackend {
+        impl<'a> crate::$rule for ElasticsearchBackend<'a> {
             fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
                 let response = self.tokio_runtime.block_on(
                     self.client
@@ -58,7 +55,32 @@ macro_rules! elasticsearch_rule {
     };
 }
 
-elasticsearch_rule!(
+// implement rules for the Elasticsearch search client
+// JSON Pointer: https://datatracker.ietf.org/doc/html/rfc6901
+impl<'a> ElasticsearchBackend<'a> {
+            fn is_compliant(&self) -> Result<bool, Box<dyn std::error::Error>> {
+                let response = self.tokio_runtime.block_on(
+                    self.esql_client.async_query().body(json!({ "query": "from warnings-test | keep *" })).send()
+                )?;
+                let response_body = self
+                    .tokio_runtime
+                    .block_on(response.json::<serde_json::Value>())?;
+                println!("Response: {:?}", response_body);
+                Ok(response_body
+                    .pointer($json_pointer)
+                    .ok_or::<Box<dyn std::error::Error>>(
+                        "could not get JSON Pointer from response".into(),
+                    )?
+                    .as_i64()
+                    .ok_or::<Box<dyn std::error::Error>>(
+                        "could not read total hits from response".into(),
+                    )?
+                    < $threshold)
+            }
+        }
+}
+
+search_rule!(
     LOG001,
     json!({
         "size": 0,
@@ -91,7 +113,7 @@ elasticsearch_rule!(
     ("/hits/total/value", 1)
 );
 
-elasticsearch_rule!(
+search_rule!(
     LOG002,
     json!({
         "size": 0,
@@ -113,7 +135,7 @@ elasticsearch_rule!(
     ("/hits/total/value", 1)
 );
 
-elasticsearch_rule!(
+search_rule!(
     MET001,
     json!({
       "size": 0,
@@ -139,7 +161,7 @@ elasticsearch_rule!(
     ("/aggregations/unique_attribute_keys/value", 10001)
 );
 
-elasticsearch_rule!(
+search_rule!(
     MET002,
     json!({
       "size": 0,
